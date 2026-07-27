@@ -228,3 +228,70 @@ body{font-family:"Inter",system-ui,-apple-system,sans-serif;color:#1d293d;backgr
   border-radius:12px;font-size:.88rem;box-shadow:0 12px 30px -10px rgba(0,0,0,.4);opacity:0;transform:translateY(10px);
   transition:all .3s;z-index:100;pointer-events:none}
 .toast.show{opacity:1;transform:none}
+
+/* ============================================================
+   MODAL / DIALOG
+   ============================================================ */
+.overlay{position:fixed;inset:0;background:rgba(15,23,43,.55);backdrop-filter:blur(3px);z-index:200;
+  display:flex;align-items:center;justify-content:center;padding:1rem;opacity:0;pointer-events:none;transition:opacity .2s}
+.overlay.show{opacity:1;pointer-events:auto}
+.modal{background:#fff;border-radius:18px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;
+  box-shadow:0 30px 60px -20px rgba(15,23,43,.5);transform:translateY(14px) scale(.98);transition:all .25s}
+.overlay.show .modal{transform:none}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:1.3rem 1.5rem;border-bottom:1px solid #eef1f6}
+.modal-title{font-family:"Instrument Sans";font-weight:800;font-size:1.2rem;color:#1a2b4a}
+.modal-close{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:1.3rem;transition:background .14s}
+.modal-close:hover{background:#f1f5f9;color:#1d293d}
+.modal-body{padding:1.5rem}
+.modal-foot{padding:1.1rem 1.5rem;border-top:1px solid #eef1f6;display:flex;gap:.6rem;justify-content:flex-end}
+.modal-foot .btn{padding:.6rem 1.3rem;font-size:.9rem}
+.row-2{display:grid;grid-template-columns:1fr 1fr;gap:.9rem}
+@media(max-width:520px){.row-2{grid-template-columns:1fr}}
+.sel{width:100%;padding:.8rem 1rem;font-size:.95rem;color:#1d293d;background:#fff;border:1.5px solid #d8dee9;
+  border-radius:12px;transition:border-color .15s,box-shadow .15s;appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2394a3b8' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right .9rem center}
+.sel:focus{border-color:var(--a-blue);box-shadow:0 0 0 4px rgba(85,136,221,.15);outline:none}
+
+/* confirm dialog */
+.confirm .modal{max-width:380px;text-align:center}
+.confirm .modal-body{padding:1.8rem 1.5rem}
+.confirm-icon{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:1.6rem}
+
+/* toast stack (multiple) */
+.toast-stack{position:fixed;bottom:24px;right:24px;display:flex;flex-direction:column;gap:.6rem;z-index:300;align-items:flex-end}
+.toast{position:relative;bottom:auto;right:auto;background:#1d293d;color:#fff;padding:.85rem 1.2rem;
+  border-radius:12px;font-size:.88rem;box-shadow:0 12px 30px -10px rgba(0,0,0,.4);opacity:0;transform:translateY(10px);
+  transition:all .3s;max-width:320px}
+.toast.show{opacity:1;transform:none}
+.toast.ok{border-left:4px solid var(--a-emerald)}
+.toast.err{border-left:4px solid var(--a-red)}
+
+/* empty state */
+.empty{text-align:center;padding:3rem 1rem;color:#94a3b8}
+.empty .em-ic{width:64px;height:64px;border-radius:18px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;color:#94a3b8}
+.empty p{font-size:.92rem;margin-top:.3rem}
+
+/* table row actions */
+.row-actions{display:flex;gap:.4rem;justify-content:flex-end}
+.mini-btn{width:32px;height:32px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;color:#64748b;transition:all .14s}
+.mini-btn:hover{background:#f1f5f9}
+.mini-btn.danger:hover{background:rgba(212,102,96,.12);color:var(--a-red)}
+.mini-btn.edit:hover{background:rgba(85,136,221,.12);color:var(--a-blue)}
+
+/* stat delta helper */
+.delta{font-size:.72rem;font-weight:600}
+.delta.up{color:var(--a-emerald)} .delta.down{color:var(--a-red)}
+
+/* segmented control */
+.seg{display:inline-flex;background:#eef2f7;border-radius:10px;padding:.25rem}
+.seg button{padding:.4rem .9rem;border-radius:8px;font-size:.82rem;font-weight:600;color:#64748b;transition:all .14s}
+.seg button.active{background:#fff;color:#1a2b4a;box-shadow:0 1px 3px rgba(16,24,40,.1)}
+
+/* print */
+@media print{
+  .sidebar,.topbar,.toast-stack,.overlay{display:none!important}
+  .app{display:block}
+  .content{padding:0}
+  .no-print{display:none!important}
+  body{background:#fff}
+}
