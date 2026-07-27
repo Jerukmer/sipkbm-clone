@@ -90,15 +90,39 @@
         { id: "PPDB-029", nama: "Hendra Kusuma", program: "Paket A", status: "Ditolak" },
         { id: "PPDB-028", nama: "Sela Marlina", program: "Paket C", status: "Diverifikasi" }
       ],
-      absensi: {},   // { S001: 'Hadir'|'Izin'|'Alpha' }
-      raport: {}     // { S001: { rata: 87.4, predikat:'A' } }
+      absensi: {},
+      raport: {},
+      perpus: [
+        { id: "B001", judul: "Matematika Dasar", pengarang: "Dr. Suharto", stok: 12, dipinjam: 3 },
+        { id: "B002", judul: "Bahasa Indonesia Kreatif", pengarang: "Rina M.", stok: 8, dipinjam: 1 },
+        { id: "B003", judul: "Sejarah Nusantara", pengarang: "Prof. Wijaya", stok: 5, dipinjam: 5 },
+        { id: "B004", judul: "Fisika Terapan", pengarang: "A. Santoso", stok: 10, dipinjam: 0 }
+      ],
+      mapel: [
+        { id: "MP001", nama: "Matematika", kelompok: "Wajib", kkm: 75 },
+        { id: "MP002", nama: "Bahasa Indonesia", kelompok: "Wajib", kkm: 70 },
+        { id: "MP003", nama: "Bahasa Inggris", kelompok: "Wajib", kkm: 70 },
+        { id: "MP004", nama: "Ilmu Pengetahuan Alam", kelompok: "Wajib", kkm: 72 },
+        { id: "MP005", nama: "Pendidikan Kewarganegaraan", kelompok: "Wajib", kkm: 70 },
+        { id: "MP006", nama: "Seni Budaya", kelompok: "Peminatan", kkm: 65 }
+      ],
+      settings: {
+        namaPKBM: "PKBM Cerdas", npsn: "12345678", kecamatan: "Lowokwaru", kota: "Malang",
+        kepala: "Heni S.", kontak: "08123456789", tema: "emerald"
+      }
     };
   }
   var state = null;
   function load() {
     try {
       var raw = localStorage.getItem(KEY);
-      if (raw) return JSON.parse(raw);
+      if (raw) {
+        var s = JSON.parse(raw);
+        // merge guard: pastikan key baru ada (backward-compatible)
+        var base = seed();
+        ["perpus", "mapel", "settings"].forEach(function (k) { if (!s[k]) s[k] = base[k]; });
+        return s;
+      }
     } catch (e) {}
     return seed();
   }
@@ -111,11 +135,16 @@
     save: save, ICONS: ICONS, $: $, $$: $$,
     fmt: function (n) { return "Rp " + Number(n).toLocaleString("id-ID"); },
     nextId: function (prefix) {
+      var arr = prefix === "S" ? state.siswa
+        : (prefix === "INV" || prefix === "OUT") ? state.keuangan
+        : prefix === "PPDB" ? state.ppdb
+        : prefix === "B" ? state.perpus
+        : prefix === "MP" ? state.mapel : [];
       var max = 0;
-      state[prefix === "S" ? "siswa" : prefix === "INV" || prefix === "OUT" ? "keuangan" : "ppdb"].forEach(function (x) {
+      arr.forEach(function (x) {
         var m = String(x.id).match(/(\d+)/); if (m) max = Math.max(max, parseInt(m[1], 10));
       });
-      return prefix + String(max + 1).padStart(4, "0");
+      return prefix + String(max + 1).padStart(3, "0");
     }
   };
 
@@ -208,9 +237,10 @@
 
     var VIEWS = {
       overview: viewOverview, siswa: viewSiswa, absensi: viewAbsensi,
-      raport: viewRaport, keuangan: viewKeuangan, ppdb: viewPPDB
+      raport: viewRaport, keuangan: viewKeuangan, ppdb: viewPPDB,
+      perpus: viewPerpus, kurikulum: viewKurikulum, pengaturan: viewPengaturan
     };
-    var TITLES = { overview: "Dashboard", siswa: "Siswa", absensi: "Absensi", raport: "Raport", keuangan: "Keuangan", ppdb: "PPDB Online" };
+    var TITLES = { overview: "Dashboard", siswa: "Siswa", absensi: "Absensi", raport: "Raport", keuangan: "Keuangan", ppdb: "PPDB Online", perpus: "Perpustakaan", kurikulum: "Kurikulum", pengaturan: "Pengaturan" };
 
     function render(view) {
       if (!VIEWS[view]) view = "overview";
@@ -616,6 +646,210 @@
         var r = state.ppdb.find(function (x) { return x.id === b.getAttribute("data-tolak"); });
         if (r) { r.status = "Ditolak"; save(); SIPKBM.__nav("ppdb"); toast(r.nama + " ditolak", "ok"); }
       });
+    });
+  };
+
+  /* ============================================================
+     VIEW: PERPUSTAKAAN  (CRUD buku + pinjam/kembali)
+     ============================================================ */
+  function viewPerpus() {
+    var p = state.perpus;
+    var total = p.reduce(function (a, x) { return a + x.stok + x.dipinjam; }, 0);
+    var dipinjam = p.reduce(function (a, x) { return a + x.dipinjam; }, 0);
+    var tersedia = total - dipinjam;
+
+    var rows = p.map(function (r) {
+      var sc = r.stok > 0 ? "emerald" : "red";
+      return '<tr><td class="name">' + r.id + '</td>' +
+        '<td>' + av(r.judul) + '<span class="name">' + r.judul + '</span><div style="font-size:.74rem;color:#94a3b8">' + r.pengarang + '</div></td>' +
+        '<td>' + r.stok + '</td><td>' + r.dipinjam + '</td>' +
+        '<td><span class="badge badge-' + sc + '">' + (r.stok > 0 ? "Tersedia" : "Habis") + '</span></td>' +
+        '<td><div class="row-actions">' +
+          (r.stok > 0 ? '<button class="mini-btn edit" title="Pinjam" data-pinjam="' + r.id + '">' + borrowIc() + '</button>' : '') +
+          (r.dipinjam > 0 ? '<button class="mini-btn" title="Kembali" data-kembali="' + r.id + '" style="color:var(--a-blue)">' + backIc() + '</button>' : '') +
+          '<button class="mini-btn edit" title="Edit" data-editb="' + r.id + '">' + editIc() + '</button>' +
+          '<button class="mini-btn danger" title="Hapus" data-delb="' + r.id + '">' + delIc() + '</button>' +
+        '</div></td></tr>';
+    }).join("");
+
+    return sectionHead("Perpustakaan", total + " eksemplar · " + tersedia + " tersedia") +
+      '<div class="stat-grid">' +
+        stat("ic-emerald", ICONS.book, total, "Total Buku") +
+        stat("ic-blue", ICONS.book, tersedia, "Tersedia") +
+        stat("ic-amber", ICONS.alert, dipinjam, "Dipinjam") +
+        stat("ic-red", ICONS.alert, p.filter(function (x) { return x.stok === 0; }).length, "Stok Habis") +
+      '</div>' +
+      '<div class="panel"><div class="panel-head"><div class="panel-title">Daftar Buku</div>' +
+      '<button class="btn btn-primary" style="padding:.5rem 1rem;font-size:.85rem" data-act="addb">+ Tambah Buku</button></div>' +
+      '<table class="tbl">' + tableHead(["Kode", "Judul", "Stok", "Dipinjam", "Status", ""]) + '<tbody>' + rows + '</tbody></table></div>';
+  }
+  function borrowIc() { return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>'; }
+  function backIc() { return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>'; }
+
+  function bukuForm(rec) {
+    var r = rec || {};
+    openModal(
+      '<div class="modal"><div class="modal-head"><div class="modal-title">' + (rec ? "Edit Buku" : "Tambah Buku") + '</div>' +
+      '<button class="modal-close" onclick="SIPKBM.closeModal()">×</button></div>' +
+      '<div class="modal-body">' +
+        '<div class="field"><label class="label">Judul Buku</label><input class="input" id="b_judul" value="' + (r.judul || "") + '" placeholder="Judul buku"></div>' +
+        '<div class="field"><label class="label">Pengarang</label><input class="input" id="b_peng" value="' + (r.pengarang || "") + '" placeholder="Nama pengarang"></div>' +
+        '<div class="field"><label class="label">Stok Awal</label><input class="input" id="b_stok" type="number" value="' + (r.stok != null ? r.stok : 1) + '"></div>' +
+      '</div>' +
+      '<div class="modal-foot"><button class="btn btn-ghost" onclick="SIPKBM.closeModal()">Batal</button>' +
+      '<button class="btn btn-primary" id="b_save">' + (rec ? "Simpan" : "Tambah") + '</button></div></div>'
+    );
+    $("#b_save").addEventListener("click", function () {
+      var judul = $("#b_judul").value.trim();
+      if (!judul) { toast("Judul wajib diisi", "err"); return; }
+      var stok = parseInt($("#b_stok").value, 10) || 0;
+      if (rec) { rec.judul = judul; rec.pengarang = $("#b_peng").value.trim(); rec.stok = stok; }
+      else { state.perpus.push({ id: SIPKBM.nextId("B"), judul: judul, pengarang: $("#b_peng").value.trim(), stok: stok, dipinjam: 0 }); }
+      save(); closeModal(); SIPKBM.__nav("perpus"); toast("Data buku tersimpan", "ok");
+    });
+  }
+  window.SIPKBM.after_perpus = function () {
+    var add = $('[data-act="addb"]'); if (add) add.addEventListener("click", function () { bukuForm(null); });
+    $$("[data-pinjam]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var r = state.perpus.find(function (x) { return x.id === b.getAttribute("data-pinjam"); });
+        if (r && r.stok > 0) { r.stok--; r.dipinjam++; save(); SIPKBM.__nav("perpus"); toast(r.judul + " dipinjam", "ok"); }
+      });
+    });
+    $$("[data-kembali]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var r = state.perpus.find(function (x) { return x.id === b.getAttribute("data-kembali"); });
+        if (r && r.dipinjam > 0) { r.stok++; r.dipinjam--; save(); SIPKBM.__nav("perpus"); toast(r.judul + " dikembalikan", "ok"); }
+      });
+    });
+    $$("[data-editb]").forEach(function (b) {
+      b.addEventListener("click", function () { var id = b.getAttribute("data-editb"); bukuForm(state.perpus.find(function (x) { return x.id === id; })); });
+    });
+    $$("[data-delb]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var id = b.getAttribute("data-delb"); var rec = state.perpus.find(function (x) { return x.id === id; });
+        confirmDialog("Hapus Buku", "Yakin hapus " + (rec ? rec.judul : id) + "?", function () {
+          state.perpus = state.perpus.filter(function (x) { return x.id !== id; }); save(); SIPKBM.__nav("perpus"); toast("Buku dihapus", "ok");
+        }, true);
+      });
+    });
+  };
+
+  /* ============================================================
+     VIEW: KURIKULUM  (CRUD mapel)
+     ============================================================ */
+  function viewKurikulum() {
+    var m = state.mapel;
+    var rows = m.map(function (r) {
+      var sc = r.kelompok === "Wajib" ? "emerald" : "amber";
+      return '<tr><td class="name">' + r.id + '</td><td>' + av(r.nama) + '<span class="name">' + r.nama + '</span></td>' +
+        '<td><span class="badge badge-' + sc + '">' + r.kelompok + '</span></td>' +
+        '<td>' + r.kkm + '</td>' +
+        '<td><div class="row-actions">' +
+          '<button class="mini-btn edit" title="Edit" data-editm="' + r.id + '">' + editIc() + '</button>' +
+          '<button class="mini-btn danger" title="Hapus" data-delm="' + r.id + '">' + delIc() + '</button>' +
+        '</div></td></tr>';
+    }).join("");
+
+    return sectionHead("Kurikulum", m.length + " mata pelajaran terdaftar") +
+      '<div class="panel"><div class="panel-head"><div class="panel-title">Mata Pelajaran</div>' +
+      '<button class="btn btn-primary" style="padding:.5rem 1rem;font-size:.85rem" data-act="addm">+ Tambah Mapel</button></div>' +
+      '<table class="tbl">' + tableHead(["Kode", "Nama Mapel", "Kelompok", "KKM", ""]) + '<tbody>' + rows + '</tbody></table></div>';
+  }
+  function mapelForm(rec) {
+    var r = rec || {};
+    openModal(
+      '<div class="modal"><div class="modal-head"><div class="modal-title">' + (rec ? "Edit Mapel" : "Tambah Mapel") + '</div>' +
+      '<button class="modal-close" onclick="SIPKBM.closeModal()">×</button></div>' +
+      '<div class="modal-body">' +
+        '<div class="field"><label class="label">Nama Mata Pelajaran</label><input class="input" id="m_nama" value="' + (r.nama || "") + '" placeholder="Mis. Kimia"></div>' +
+        '<div class="row-2">' +
+          '<div class="field"><label class="label">Kelompok</label><select class="sel" id="m_kel"><option ' + (r.kelompok === "Wajib" || !r.kelompok ? "selected" : "") + '>Wajib</option><option ' + (r.kelompok === "Peminatan" ? "selected" : "") + '>Peminatan</option></select></div>' +
+          '<div class="field"><label class="label">KKM</label><input class="input" id="m_kkm" type="number" value="' + (r.kkm != null ? r.kkm : 70) + '"></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="modal-foot"><button class="btn btn-ghost" onclick="SIPKBM.closeModal()">Batal</button>' +
+      '<button class="btn btn-primary" id="m_save">' + (rec ? "Simpan" : "Tambah") + '</button></div></div>'
+    );
+    $("#m_save").addEventListener("click", function () {
+      var nama = $("#m_nama").value.trim(), kkm = parseInt($("#m_kkm").value, 10);
+      if (!nama || isNaN(kkm)) { toast("Isi nama & KKM", "err"); return; }
+      if (rec) { rec.nama = nama; rec.kelompok = $("#m_kel").value; rec.kkm = kkm; }
+      else { state.mapel.push({ id: SIPKBM.nextId("MP"), nama: nama, kelompok: $("#m_kel").value, kkm: kkm }); }
+      save(); closeModal(); SIPKBM.__nav("kurikulum"); toast("Mapel tersimpan", "ok");
+    });
+  }
+  window.SIPKBM.after_kurikulum = function () {
+    var add = $('[data-act="addm"]'); if (add) add.addEventListener("click", function () { mapelForm(null); });
+    $$("[data-editm]").forEach(function (b) {
+      b.addEventListener("click", function () { var id = b.getAttribute("data-editm"); mapelForm(state.mapel.find(function (x) { return x.id === id; })); });
+    });
+    $$("[data-delm]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var id = b.getAttribute("data-delm"); var rec = state.mapel.find(function (x) { return x.id === id; });
+        confirmDialog("Hapus Mapel", "Yakin hapus " + (rec ? rec.nama : id) + "?", function () {
+          state.mapel = state.mapel.filter(function (x) { return x.id !== id; }); save(); SIPKBM.__nav("kurikulum"); toast("Mapel dihapus", "ok");
+        }, true);
+      });
+    });
+  };
+
+  /* ============================================================
+     VIEW: PENGATURAN  (profil PKBM + reset data)
+     ============================================================ */
+  function viewPengaturan() {
+    var s = state.settings;
+    return sectionHead("Pengaturan", "Profil & preferensi PKBM") +
+      '<div class="grid-2">' +
+        '<div class="panel"><div class="panel-head"><div class="panel-title">Profil Lembaga</div></div><div class="modal-body" style="padding:1.5rem">' +
+          '<div class="field"><label class="label">Nama PKBM</label><input class="input" id="set_nama" value="' + (s.namaPKBM || "") + '"></div>' +
+          '<div class="row-2">' +
+            '<div class="field"><label class="label">NPSN</label><input class="input" id="set_npsn" value="' + (s.npsn || "") + '"></div>' +
+            '<div class="field"><label class="label">Kontak</label><input class="input" id="set_kontak" value="' + (s.kontak || "") + '"></div>' +
+          '</div>' +
+          '<div class="row-2">' +
+            '<div class="field"><label class="label">Kecamatan</label><input class="input" id="set_kec" value="' + (s.kecamatan || "") + '"></div>' +
+            '<div class="field"><label class="label">Kota</label><input class="input" id="set_kota" value="' + (s.kota || "") + '"></div>' +
+          '</div>' +
+          '<div class="field"><label class="label">Kepala PKBM</label><input class="input" id="set_kepala" value="' + (s.kepala || "") + '"></div>' +
+          '<div class="field"><label class="label">Tema Aksen</label><select class="sel" id="set_tema">' +
+            ['emerald', 'blue', 'amber', 'red'].map(function (t) { return '<option ' + (s.tema === t ? "selected" : "") + '>' + t + '</option>'; }).join("") + '</select></div>' +
+          '<button class="btn btn-primary btn-block" id="set_save" style="margin-top:.5rem">Simpan Pengaturan</button>' +
+        '</div></div>' +
+        '<div class="panel"><div class="panel-head"><div class="panel-title">Statistik & Data</div></div><div class="modal-body" style="padding:1.5rem">' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">' +
+            miniStat("Siswa", state.siswa.length) +
+            miniStat("Buku", state.perpus.length) +
+            miniStat("Mapel", state.mapel.length) +
+            miniStat("Transaksi", state.keuangan.length) +
+          '</div>' +
+          '<div style="margin-top:1.4rem;border-top:1px solid #eef1f6;padding-top:1.2rem">' +
+            '<div style="font-weight:600;color:#1a2b4a;margin-bottom:.4rem">Reset Data</div>' +
+            '<p style="font-size:.82rem;color:#94a3b8;margin-bottom:.8rem">Kembalikan semua data ke contoh awal (tidak bisa dibatalkan).</p>' +
+            '<button class="btn btn-ghost" style="border-color:rgba(212,102,96,.4);color:var(--a-red)" id="set_reset">Reset Semua Data</button>' +
+          '</div>' +
+        '</div></div>' +
+      '</div>';
+  }
+  function miniStat(l, v) {
+    return '<div style="background:#f8fafc;border-radius:12px;padding:1rem"><div style="font-size:1.6rem;font-weight:800;color:#1a2b4a">' + v + '</div><div style="font-size:.8rem;color:#94a3b8">' + l + '</div></div>';
+  }
+  window.SIPKBM.after_pengaturan = function () {
+    var sv = $("#set_save");
+    if (sv) sv.addEventListener("click", function () {
+      state.settings = {
+        namaPKBM: $("#set_nama").value.trim(), npsn: $("#set_npsn").value.trim(),
+        kecamatan: $("#set_kec").value.trim(), kota: $("#set_kota").value.trim(),
+        kepala: $("#set_kepala").value.trim(), kontak: $("#set_kontak").value.trim(),
+        tema: $("#set_tema").value
+      };
+      save(); toast("Pengaturan tersimpan", "ok");
+    });
+    var rs = $("#set_reset");
+    if (rs) rs.addEventListener("click", function () {
+      confirmDialog("Reset Semua Data", "Semua data akan dikembalikan ke contoh awal. Lanjut?", function () {
+        state = seed(); save(); window.SIPKBM.state = state; SIPKBM.__nav("pengaturan"); toast("Data direset", "ok");
+      }, true);
     });
   };
 })();
