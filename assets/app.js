@@ -226,8 +226,8 @@
     return fetch(url, { cache: "no-store" }).then(function (r) { return r.text(); })
       .then(function (txt) {
         var parsed = csvToRows(txt);
-        // map ke state.siswa (id=NIS, nama=NAMA, sisa disimpen di ._meta)
-        return parsed.rows.map(function (r, idx) {
+        var rows = parsed.rows.filter(function (r) { return (r["NAMA"] || "").trim() !== ""; });
+        return rows.map(function (r, idx) {
           var o = { _meta: r, _row: idx + 2 };
           o.id = r["NIS"] || ("ROW" + (idx + 2));
           o.nama = r["NAMA"] || "(tanpa nama)";
@@ -334,7 +334,7 @@
   if (content) {
     state = load();
     if (state && typeof state.then === "function") {
-      state.then(function (s) { window.SIPKBM.state = s; initDashboard(); });
+      state.then(function (s) { state = s; window.SIPKBM.state = s; initDashboard(); });
     } else {
       window.SIPKBM.state = state; initDashboard();
     }
