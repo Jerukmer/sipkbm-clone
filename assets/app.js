@@ -129,6 +129,23 @@
       .then(function (j) { if (!j.ok) throw new Error(j.error || "write gagal"); return true; });
   }
   function load() {
+    if (SHEET_ID && SHEET_GID) {
+      try {
+        return fetchSheetSiswa().then(function (siswa) {
+          var s = seed();
+          s.siswa = siswa;
+          try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {}
+          return s;
+        }).catch(function () {
+          try { var raw = localStorage.getItem(KEY); if (raw) return JSON.parse(raw); } catch (e) {}
+          var fb = seed(); try { fb.siswa = JSON.parse(localStorage.getItem(KEY) || "{}").siswa || fb.siswa; } catch (e) {}
+          return fb;
+        });
+      } catch (e) {
+        try { var raw = localStorage.getItem(KEY); if (raw) return JSON.parse(raw); } catch (e2) {}
+        return seed();
+      }
+    }
     if (WEB_APP_URL) {
       try {
         return Promise.all([
@@ -177,6 +194,49 @@
       Promise.all(tasks.map(function (t) { return sheetPush(t[0], t[1]).catch(function () { return false; }); }))
         .then(function () {});
     }
+  }
+
+  /* --- Google Sheet (CSV publik / Viewer) sebagai sumber SISWA --- */
+  var SHEET_ID = (window.SIPKBM_CONFIG && window.SIPKBM_CONFIG.SHEET_ID) ? window.SIPKBM_CONFIG.SHEET_ID : "";
+  var SHEET_GID = (window.SIPKBM_CONFIG && window.SIPKBM_CONFIG.SHEET_GID) ? window.SIPKBM_CONFIG.SHEET_GID : "";
+  function csvToRows(csv) {
+    var lines = csv.split(/\r?\n/).filter(function (l) { return l.length; });
+    if (!lines.length) return { head: [], rows: [] };
+    function parseLine(line) {
+      var out = [], cur = "", q = false;
+      for (var i = 0; i < line.length; i++) {
+        var c = line[i];
+        if (c === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++; } else { q = !q; } }
+        else if (c === "," && !q) { out.push(cur); cur = ""; }
+        else { cur += c; }
+      }
+      out.push(cur);
+      return out.map(function (x) { return x.trim(); });
+    }
+    var head = parseLine(lines[0]);
+    var rows = lines.slice(1).map(function (l) {
+      var cells = parseLine(l); var o = {};
+      head.forEach(function (h, i) { o[h] = cells[i] !== undefined ? cells[i] : ""; });
+      return o;
+    });
+    return { head: head, rows: rows };
+  }
+  function fetchSheetSiswa() {
+    var url = "https://docs.google.com/spreadsheets/d/" + SHEET_ID + "/export?format=csv&id=" + SHEET_ID + "&gid=" + SHEET_GID;
+    return fetch(url, { cache: "no-store" }).then(function (r) { return r.text(); })
+      .then(function (txt) {
+        var parsed = csvToRows(txt);
+        // map ke state.siswa (id=NIS, nama=NAMA, sisa disimpen di ._meta)
+        return parsed.rows.map(function (r, idx) {
+          var o = { _meta: r, _row: idx + 2 };
+          o.id = r["NIS"] || ("ROW" + (idx + 2));
+          o.nama = r["NAMA"] || "(tanpa nama)";
+          o.program = r["PAKET"] || "";
+          o.kelas = (r["KELAS"] || "").replace(/KELAS /i, "");
+          o.status = r["STATUS AKADEMIK"] || "Aktif";
+          return o;
+        });
+      });
   }
 
   /* expose API for inline handlers + other modules */
@@ -389,35 +449,40 @@
      VIEW: SISWA  (CRUD + filter + search)
      ============================================================ */
   var siswaFilter = "Semua", siswaQ = "";
+  function isSheetMode() { return !!(SHEET_ID && SHEET_GID); }
   function viewSiswa() {
     var rows = state.siswa.slice();
     if (siswaFilter !== "Semua") rows = rows.filter(function (x) { return x.status === siswaFilter; });
-    if (siswaQ) { var q = siswaQ.toLowerCase(); rows = rows.filter(function (x) { return x.nama.toLowerCase().indexOf(q) >= 0 || x.id.toLowerCase().indexOf(q) >= 0; }); }
-    var aktif = state.siswa.filter(function (x) { return x.status === "Aktif"; }).length;
+    if (siswaQ) { var q = siswaQ.toLowerCase(); rows = rows.filter(function (x) { return x.nama.toLowerCase().indexOf(q) >= 0 || String(x.id).toLowerCase().indexOf(q) >= 0; }); }
+    var aktif = state.siswa.filter(function (x) { return x.status === "Aktif" || x.status === "NAIK KELAS" || x.status === "AKTIF"; }).length;
+    var sheet = isSheetMode();
 
     var chips = ["Semua", "Aktif", "Cuti", "Nonaktif"].map(function (f) {
       return '<span class="chip ' + (siswaFilter === f ? "active" : "") + '" data-f="' + f + '">' + f + '</span>';
     }).join("");
-    chips += '<span class="chip" data-act="add" style="margin-left:auto;background:var(--a-emerald);color:#fff;border-color:var(--a-emerald)">+ Tambah Siswa</span>';
+    if (!sheet) chips += '<span class="chip" data-act="add" style="margin-left:auto;background:var(--a-emerald);color:#fff;border-color:var(--a-emerald)">+ Tambah Siswa</span>';
 
-    var body = rows.length ? '<table class="tbl">' + tableHead(["", "NIS", "Nama", "Program", "Kelas", "Status", ""]) +
+    var body = rows.length ? '<table class="tbl">' + tableHead(["", "NIS", "Nama", "Paket", "Kelas", "Status", ""]) +
       '<tbody>' + rows.map(function (r) {
-        var sc = r.status === "Aktif" ? "emerald" : r.status === "Cuti" ? "amber" : "red";
+        var sc = (r.status === "Aktif" || r.status === "AKTIF" || r.status === "NAIK KELAS") ? "emerald" : r.status === "Cuti" ? "amber" : "red";
         return '<tr><td></td><td>' + r.id + '</td>' +
           '<td>' + av(r.nama) + '<span class="name">' + r.nama + '</span></td>' +
           '<td>' + r.program + '</td><td>' + r.kelas + '</td>' +
           '<td><span class="badge badge-' + sc + '">' + r.status + '</span></td>' +
           '<td><div class="row-actions">' +
-            '<button class="mini-btn edit" title="Edit" data-edit="' + r.id + '">' + editIc() + '</button>' +
-            '<button class="mini-btn danger" title="Hapus" data-del="' + r.id + '">' + delIc() + '</button>' +
+            '<button class="mini-btn edit" title="Detail" data-detail="' + r.id + '">' + eyeIc() + '</button>' +
+            (sheet ? '' : '<button class="mini-btn edit" title="Edit" data-edit="' + r.id + '">' + editIc() + '</button>') +
+            (sheet ? '' : '<button class="mini-btn danger" title="Hapus" data-del="' + r.id + '">' + delIc() + '</button>') +
           '</div></td></tr>';
       }).join("") + '</tbody></table>'
       : emptyState(ICONS.users, "Tidak ada siswa dengan filter ini.");
 
-    return sectionHead("Manajemen Siswa", aktif + " aktif dari " + state.siswa.length + " siswa") +
+    return sectionHead("Manajemen Siswa", (sheet ? "Sumber: Google Sheet (" + state.siswa.length + " siswa)" : aktif + " aktif dari " + state.siswa.length + " siswa")) +
+      (sheet ? '<div class="filters"><span class="chip active" style="background:rgba(85,136,221,.12);color:var(--a-blue);border-color:transparent">🔗 Tersinkron Sheet</span>' + (siswaQ ? '' : '') + '</div>' : '') +
       '<div class="filters">' + chips + '</div>' +
       '<div class="panel" id="siswaPanel">' + body + '</div>';
   }
+  function eyeIc() { return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>'; }
   function editIc() { return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>'; }
   function delIc() { return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'; }
 
@@ -446,6 +511,24 @@
     });
   }
 
+  /* Detail modal: semua kolom sheet (dynamic) */
+  function siswaDetail(rec) {
+    var meta = rec._meta || {};
+    var keys = Object.keys(meta);
+    var rowsHtml = keys.map(function (k) {
+      var v = meta[k];
+      var isLink = /drive\.google\.com|http/.test(v);
+      var val = isLink ? '<a href="' + v + '" target="_blank" style="color:var(--a-blue);word-break:break-all">' + (v.length > 40 ? v.slice(0, 40) + "…" : v) + '</a>' : (v || '<span style="color:#cbd5e1">—</span>');
+      return '<div class="row-2" style="margin-bottom:.7rem"><div class="field" style="margin:0"><label class="label">' + k + '</label><div style="font-size:.88rem;color:#1d293d;word-break:break-word">' + val + '</div></div></div>';
+    }).join("");
+    openModal(
+      '<div class="modal" style="max-width:640px"><div class="modal-head"><div class="modal-title">' + (rec.nama || "Detail") + '</div>' +
+      '<button class="modal-close" onclick="SIPKBM.closeModal()">×</button></div>' +
+      '<div class="modal-body" style="max-height:70vh;overflow:auto">' + rowsHtml + '</div>' +
+      '<div class="modal-foot"><button class="btn btn-primary" onclick="SIPKBM.closeModal()">Tutup</button></div></div>'
+    );
+  }
+
   window.SIPKBM.after_siswa = function () {
     $$(".filters .chip").forEach(function (c) {
       c.addEventListener("click", function () {
@@ -455,6 +538,9 @@
     });
     var sb = $("#siswaSearch");
     if (sb) sb.addEventListener("input", function () { siswaQ = sb.value; SIPKBM.__nav("siswa"); });
+    $$("#siswaPanel [data-detail]").forEach(function (b) {
+      b.addEventListener("click", function () { var id = b.getAttribute("data-detail"); siswaDetail(state.siswa.find(function (x) { return x.id === id; })); });
+    });
     $$("#siswaPanel [data-edit]").forEach(function (b) {
       b.addEventListener("click", function () { var id = b.getAttribute("data-edit"); siswaForm(state.siswa.find(function (x) { return x.id === id; })); });
     });
