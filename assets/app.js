@@ -113,12 +113,52 @@
     };
   }
   var state = null;
+  var WEB_APP_URL = (window.SIPKBM_CONFIG && window.SIPKBM_CONFIG.WEB_APP_URL) ? window.SIPKBM_CONFIG.WEB_APP_URL : "";
+
+  function sheetPull(tabel) {
+    return fetch(WEB_APP_URL + "?action=read&tabel=" + tabel, { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { if (!j.ok) throw new Error(j.error || "read gagal"); return j.data || []; });
+  }
+  function sheetPush(tabel, rows) {
+    return fetch(WEB_APP_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "write", tabel: tabel, data: rows })
+    }).then(function (r) { return r.json(); })
+      .then(function (j) { if (!j.ok) throw new Error(j.error || "write gagal"); return true; });
+  }
   function load() {
+    if (WEB_APP_URL) {
+      try {
+        return Promise.all([
+          sheetPull("siswa"), sheetPull("keuangan"), sheetPull("ppdb"),
+          sheetPull("perpus"), sheetPull("mapel"), sheetPull("settings")
+        ]).then(function (r) {
+          var s = {
+            siswa: r[0], keuangan: r[1], ppdb: r[2], perpus: r[3], mapel: r[4],
+            absensi: {}, raport: {},
+            settings: (r[5] && r[5].length) ? r[5].reduce(function (a, x) { a[x.k] = x.v; return a; }, {}) : seed().settings
+          };
+          var base = seed();
+          ["siswa", "keuangan", "ppdb", "perpus", "mapel", "settings", "absensi", "raport"].forEach(function (k) {
+            if (!s[k] || (Array.isArray(s[k]) && !s[k].length)) s[k] = base[k];
+          });
+          try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {}
+          return s;
+        }).catch(function () {
+          try { var raw = localStorage.getItem(KEY); if (raw) return JSON.parse(raw); } catch (e) {}
+          return seed();
+        });
+      } catch (e) {
+        try { var raw = localStorage.getItem(KEY); if (raw) return JSON.parse(raw); } catch (e2) {}
+        return seed();
+      }
+    }
     try {
       var raw = localStorage.getItem(KEY);
       if (raw) {
         var s = JSON.parse(raw);
-        // merge guard: pastikan key baru ada (backward-compatible)
         var base = seed();
         ["perpus", "mapel", "settings"].forEach(function (k) { if (!s[k]) s[k] = base[k]; });
         return s;
@@ -126,7 +166,18 @@
     } catch (e) {}
     return seed();
   }
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+    if (WEB_APP_URL) {
+      var tasks = [
+        ["siswa", state.siswa], ["keuangan", state.keuangan], ["ppdb", state.ppdb],
+        ["perpus", state.perpus], ["mapel", state.mapel],
+        ["settings", Object.keys(state.settings || {}).map(function (k) { return { k: k, v: state.settings[k] }; })]
+      ];
+      Promise.all(tasks.map(function (t) { return sheetPush(t[0], t[1]).catch(function () { return false; }); }))
+        .then(function () {});
+    }
+  }
 
   /* expose API for inline handlers + other modules */
   window.SIPKBM = {
@@ -222,8 +273,11 @@
   var content = $("#content");
   if (content) {
     state = load();
-    window.SIPKBM.state = state;
-    initDashboard();
+    if (state && typeof state.then === "function") {
+      state.then(function (s) { window.SIPKBM.state = s; initDashboard(); });
+    } else {
+      window.SIPKBM.state = state; initDashboard();
+    }
   }
 
   /* ============================================================
